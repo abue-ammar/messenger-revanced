@@ -18,7 +18,7 @@ parallel-jobs = 1           # number of parallel build jobs (default: nproc)
 # Override the source/version of patches and CLI (these are the built-in defaults;
 # only add these if you want to use a different source or pin a specific version)
 patches-source = "ReVanced/revanced-patches"
-cli-source = "j-hc/revanced-cli"
+cli-source = "ReVanced/revanced-cli"
 patches-version = "latest"  # "latest", "dev", or a version tag e.g. "v5.0.0"
 cli-version = "latest"      # "latest", "dev", or a version tag
 
