@@ -122,7 +122,7 @@ get_prebuilts() {
 				if ! (
 					mkdir -p "${file}-zip" || return 1
 					unzip -qo "${file}" -d "${file}-zip" || return 1
-					java -cp "${BIN_DIR}/paccer.jar:${BIN_DIR}/dexlib2.jar" com.jhc.Main "${file}-zip/extensions/shared.${inner_ext}" "${file}-zip/extensions/shared-patched.${inner_ext}" || return 1
+					java -cp "${BIN_DIR}/paccer.jar:${BIN_DIR}/dexlib2.jar" com.abue-ammar.Main "${file}-zip/extensions/shared.${inner_ext}" "${file}-zip/extensions/shared-patched.${inner_ext}" || return 1
 					mv -f "${file}-zip/extensions/shared-patched.${inner_ext}" "${file}-zip/extensions/shared.${inner_ext}" || return 1
 					rm "${file}" || return 1
 					cd "${file}-zip" || abort
@@ -139,7 +139,6 @@ get_prebuilts() {
 }
 
 set_prebuilts() {
-	APKSIGNER="${BIN_DIR}/apksigner.jar"
 	local arch
 	arch=$(uname -m)
 	if [ "$arch" = aarch64 ]; then arch=arm64; elif [ "${arch:0:5}" = "armv7" ]; then arch=arm; fi
@@ -451,24 +450,27 @@ get_archive_pkg_name() { echo "$__ARCHIVE_PKG_NAME__"; }
 # --------------------------------------------------
 
 patch_apk() {
-	local stock_input=$1 patched_apk=$2 patcher_args=$3 cli_jar=$4 patches_jar=$5
-	local cmd="env -u GITHUB_REPOSITORY java -jar '$cli_jar' patch '$stock_input' --purge -o '$patched_apk' -p '$patches_jar' --keystore=ks.keystore \
---keystore-entry-password=123456789 --keystore-password=123456789 --signer=jhc --keystore-entry-alias=jhc $patcher_args"
-	if [ "$OS" = Android ]; then cmd+=" --custom-aapt2-binary='${AAPT2}'"; fi
-	pr "$cmd"
-	if eval "$cmd"; then [ -f "$patched_apk" ]; else
+	local stock_input=$1 patched_apk=$2 cli_jar=$3 patches_jar=$4
+	shift 4
+	local patcher_args=("$@")
+	local cmd=(
+		env -u GITHUB_REPOSITORY
+		java -jar "$cli_jar" patch "$stock_input" --purge -o "$patched_apk" -p "$patches_jar"
+		"--keystore=ks.keystore"
+		"--keystore-entry-password=abue-ammar"
+		"--keystore-password=abue-ammar"
+		"--signer=abue-ammar"
+		"--keystore-entry-alias=abue-ammar"
+	)
+	if [ "$OS" = Android ]; then cmd+=("--custom-aapt2-binary=${AAPT2}"); fi
+	if [ ${#patcher_args[@]} -gt 0 ]; then cmd+=("${patcher_args[@]}"); fi
+
+	local cmd_print=""
+	printf -v cmd_print '%q ' "${cmd[@]}"
+	pr "${cmd_print% }"
+	if "${cmd[@]}"; then [ -f "$patched_apk" ]; else
 		rm "$patched_apk" 2>/dev/null || :
 		return 1
-	fi
-}
-
-check_sig() {
-	local file=$1 pkg_name=$2
-	local sig
-	if grep -q "$pkg_name" sig.txt; then
-		sig=$(java -jar "$APKSIGNER" verify --print-certs "$file" | grep ^Signer | grep SHA-256 | tail -1 | awk '{print $NF}')
-		echo "$pkg_name signature: ${sig}"
-		grep -qFx "$sig $pkg_name" sig.txt
 	fi
 }
 
@@ -550,10 +552,6 @@ build_rv() {
 		done
 		if [ ! -f "$stock_apk" ]; then return 0; fi
 	fi
-	if ! OP=$(check_sig "$stock_apk" "$pkg_name" 2>&1) && ! grep -qFx "ERROR: Missing META-INF/MANIFEST.MF" <<<"$OP"; then
-		epr "$pkg_name not building, apk signature mismatch '$stock_apk': $OP"
-		return 0
-	fi
 	log "${table}: ${version}"
 
 	local patcher_args patched_apk build_mode
@@ -577,7 +575,12 @@ build_rv() {
 			fi
 		fi
 		if [ "${NORB:-}" != true ] || [ ! -f "$patched_apk" ]; then
-			if ! patch_apk "$stock_apk" "$patched_apk" "${patcher_args[*]}" "${args[cli]}" "${args[ptjar]}"; then
+			if ! patch_apk \
+				"$stock_apk" \
+				"$patched_apk" \
+				"${args[cli]}" \
+				"${args[ptjar]}" \
+				"${patcher_args[@]}"; then
 				epr "Building '${table}' failed!"
 				return 0
 			fi
