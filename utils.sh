@@ -119,10 +119,11 @@ get_prebuilts() {
 			if [ "$REMOVE_RV_INTEGRATIONS_CHECKS" = true ]; then
 				# Dynamically calculate inner extension (rvp->rve, mpp->mpe)
 				local inner_ext="${ext%p}e"
+				local paccer_main_cls="com.$(printf '\x6a\x68\x63').Main"
 				if ! (
 					mkdir -p "${file}-zip" || return 1
 					unzip -qo "${file}" -d "${file}-zip" || return 1
-					java -cp "${BIN_DIR}/paccer.jar:${BIN_DIR}/dexlib2.jar" com.abue-ammar.Main "${file}-zip/extensions/shared.${inner_ext}" "${file}-zip/extensions/shared-patched.${inner_ext}" || return 1
+					java -cp "${BIN_DIR}/paccer.jar:${BIN_DIR}/dexlib2.jar" "$paccer_main_cls" "${file}-zip/extensions/shared.${inner_ext}" "${file}-zip/extensions/shared-patched.${inner_ext}" || return 1
 					mv -f "${file}-zip/extensions/shared-patched.${inner_ext}" "${file}-zip/extensions/shared.${inner_ext}" || return 1
 					rm "${file}" || return 1
 					cd "${file}-zip" || abort
@@ -200,7 +201,7 @@ _req() {
 	local ip="$1" op="$2"
 	shift 2
 	if [ "$op" = - ]; then
-		if ! curl -L -c "$TEMP_DIR/cookie.txt" -b "$TEMP_DIR/cookie.txt" --connect-timeout 5 --retry 0 --fail -s -S "$@" "$ip"; then
+		if ! curl -L -c "$TEMP_DIR/cookie.txt" -b "$TEMP_DIR/cookie.txt" --connect-timeout 5 --retry 5 --retry-delay 2 --retry-max-time 120 --fail -s -S "$@" "$ip"; then
 			epr "Request failed: $ip"
 			return 1
 		fi
@@ -212,7 +213,7 @@ _req() {
 			while [ -f "$dlp" ]; do sleep 1; done
 			return
 		fi
-		if ! curl -L -c "$TEMP_DIR/cookie.txt" -b "$TEMP_DIR/cookie.txt" --connect-timeout 5 --retry 0 --fail -s -S "$@" "$ip" -o "$dlp"; then
+		if ! curl -L -c "$TEMP_DIR/cookie.txt" -b "$TEMP_DIR/cookie.txt" --connect-timeout 5 --retry 5 --retry-delay 2 --retry-max-time 120 --fail -s -S "$@" "$ip" -o "$dlp"; then
 			epr "Request failed: $ip"
 			return 1
 		fi
