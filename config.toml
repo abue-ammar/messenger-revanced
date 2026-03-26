@@ -1,5 +1,5 @@
 parallel-jobs = 1
-patches-source = "MorpheApp/morphe-patches"
+patches-source = "inotia00/revanced-patches"
 cli-source = "MorpheApp/morphe-cli"
 
 [Messenger]
