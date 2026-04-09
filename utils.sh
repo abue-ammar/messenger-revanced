@@ -492,7 +492,7 @@ patch_apk() {
 check_sig() {
 	local file=$1 pkg_name=$2
 	local sig
-	if grep -q "$pkg_name" sig.txt; then
+	if [ -f sig.txt ] && grep -q "$pkg_name" sig.txt; then
 		sig=$(java -jar "$APKSIGNER" verify --print-certs "$file" | grep ^Signer | grep SHA-256 | tail -1 | awk '{print $NF}')
 		echo "$pkg_name signature: ${sig}"
 		grep -qFx "$sig $pkg_name" sig.txt
