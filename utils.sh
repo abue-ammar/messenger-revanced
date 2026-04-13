@@ -109,7 +109,7 @@ get_prebuilts() {
 				if [ "$ver" = "latest" ]; then
 					resp=$(jq -e '.[0]' <<<"$resp") || return 1
 				else
-					resp=$(jq -e --arg tag_name "$ver" '.[] | select(.tag_name == $tag_name)' <<<"$resp" | head -1) || return 1
+					resp=$(jq -e --arg tag_name "$ver" 'map(select(.tag_name == $tag_name)) | .[0]' <<<"$resp") || return 1
 				fi
 				tag_name=$(jq -r '.tag_name' <<<"$resp")
 				matches=$(jq -e ".assets.links | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
@@ -213,15 +213,16 @@ config_update() {
 				rv_rel="$GITLAB_PATCHES_RELEASES_URL"
 			fi
 			if [ "$use_gitlab_patches" = true ]; then
-				local resp
+				local resp patches_ver_resolved
+				patches_ver_resolved="$PATCHES_VER"
 				resp=$(req "$rv_rel" -) || return 1
-				if [ "$PATCHES_VER" = "dev" ]; then
-					PATCHES_VER=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
+				if [ "$patches_ver_resolved" = "dev" ]; then
+					patches_ver_resolved=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
 				fi
-				if [ "$PATCHES_VER" = "latest" ]; then
+				if [ "$patches_ver_resolved" = "latest" ]; then
 					last_patches=$(jq -e '.[0]' <<<"$resp") || return 1
 				else
-					last_patches=$(jq -e --arg tag_name "$PATCHES_VER" '.[] | select(.tag_name == $tag_name)' <<<"$resp" | head -1) || return 1
+					last_patches=$(jq -e --arg tag_name "$patches_ver_resolved" 'map(select(.tag_name == $tag_name)) | .[0]' <<<"$resp") || return 1
 				fi
 				if ! last_patches=$(jq -e -r ".assets.links[]? | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
 					abort "Failed to find patch asset with extension '${PATCH_EXT}' in GitLab release metadata"
