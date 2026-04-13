@@ -5,6 +5,7 @@ TEMP_DIR="temp"
 BIN_DIR="bin"
 BUILD_DIR="build"
 PATCH_EXT=""
+GITLAB_PATCHES_RELEASES_URL="https://gitlab.com/api/v4/projects/ReVanced%2Frevanced-patches/releases"
 
 if [ "${GITHUB_TOKEN-}" ]; then GH_HEADER="Authorization: token ${GITHUB_TOKEN}"; else GH_HEADER=; fi
 NEXT_VER_CODE=${NEXT_VER_CODE:-$(date +'%Y%m%d')}
@@ -45,6 +46,8 @@ abort() {
 	exit 1
 }
 
+is_gitlab_patches_source() { [ "$1" = "ReVanced/revanced-patches" ]; }
+
 get_prebuilts() {
 	local cli_src=$1 cli_ver=$2 patches_src=$3 patches_ver=$4
 	pr "Getting prebuilts (${patches_src%/*})" >&2
@@ -69,17 +72,32 @@ get_prebuilts() {
 		dir=${TEMP_DIR}/${dir,,}-rv
 		[ -d "$dir" ] || mkdir "$dir"
 
-		local rv_rel="https://api.github.com/repos/${src}/releases" name_ver
+		local rv_rel="https://api.github.com/repos/${src}/releases" name_ver use_gitlab_patches=false
+		if [ "$tag" = "Patches" ] && is_gitlab_patches_source "$src"; then
+			use_gitlab_patches=true
+			rv_rel="$GITLAB_PATCHES_RELEASES_URL"
+		fi
 		if [ "$ver" = "dev" ]; then
 			local resp
-			resp=$(gh_req "$rv_rel" -) || return 1
-			ver=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
+			if [ "$use_gitlab_patches" = true ]; then
+				resp=$(req "$rv_rel" -) || return 1
+				ver=$(jq -e -r '.[].tag_name' <<<"$resp" | get_highest_ver) || return 1
+			else
+				resp=$(gh_req "$rv_rel" -) || return 1
+				ver=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
+			fi
 		fi
 		if [ "$ver" = "latest" ]; then
-			rv_rel+="/latest"
-			name_ver="*"
+			if [ "$use_gitlab_patches" = true ]; then
+				name_ver="*"
+			else
+				rv_rel+="/latest"
+				name_ver="*"
+			fi
 		else
-			rv_rel+="/tags/${ver}"
+			if [ "$use_gitlab_patches" = false ]; then
+				rv_rel+="/tags/${ver}"
+			fi
 			name_ver="$ver"
 		fi
 
@@ -87,17 +105,36 @@ get_prebuilts() {
 		file=$(find "$dir" -name "${fprefix}-${name_ver#v}.${ext}" -type f 2>/dev/null)
 		if [ -z "$file" ]; then
 			local resp asset name
-			resp=$(gh_req "$rv_rel" -) || return 1
-			tag_name=$(jq -r '.tag_name' <<<"$resp")
-			matches=$(jq -e ".assets | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
-			if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
-				epr "More than 1 asset was found for this cli release. Fallbacking to the first one found..."
+			if [ "$use_gitlab_patches" = true ]; then
+				resp=$(req "$rv_rel" -) || return 1
+				if [ "$ver" = "latest" ]; then
+					resp=$(jq -e '.[0]' <<<"$resp") || return 1
+				else
+					resp=$(jq -e --arg ver "$ver" '.[] | select(.tag_name == $ver)' <<<"$resp" | head -1) || return 1
+				fi
+				tag_name=$(jq -r '.tag_name' <<<"$resp")
+				matches=$(jq -e ".assets.links | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
+				if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
+					epr "More than 1 asset was found for this patches release. Fallbacking to the first one found..."
+				fi
+				asset=$(jq -r ".[0]" <<<"$matches")
+				url=$(jq -r '.direct_asset_url // .url' <<<"$asset")
+				name=$(jq -r .name <<<"$asset")
+				file="${dir}/${name}"
+				req "$url" "$file" >&2 || return 1
+			else
+				resp=$(gh_req "$rv_rel" -) || return 1
+				tag_name=$(jq -r '.tag_name' <<<"$resp")
+				matches=$(jq -e ".assets | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
+				if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
+					epr "More than 1 asset was found for this cli release. Fallbacking to the first one found..."
+				fi
+				asset=$(jq -r ".[0]" <<<"$matches")
+				url=$(jq -r .url <<<"$asset")
+				name=$(jq -r .name <<<"$asset")
+				file="${dir}/${name}"
+				gh_dl "$file" "$url" >&2 || return 1
 			fi
-			asset=$(jq -r ".[0]" <<<"$matches")
-			url=$(jq -r .url <<<"$asset")
-			name=$(jq -r .name <<<"$asset")
-			file="${dir}/${name}"
-			gh_dl "$file" "$url" >&2 || return 1
 			echo "$tag: $(cut -d/ -f1 <<<"$src")/${name}  " >>"${cl_dir}/changelog.md"
 		else
 			grab_cl=false
@@ -115,7 +152,13 @@ get_prebuilts() {
 			PATCH_EXT=$(java -jar "$file" -h | grep -oP -m1 '\w+(?= files)' | tr '[:upper:]' '[:lower:]')
 			if [ -z "$PATCH_EXT" ]; then abort "Unable to detect patch extension from CLI help output."; fi
 		elif [ "$tag" = "Patches" ]; then
-			if [ $grab_cl = true ]; then echo -e "[Changelog](https://github.com/${src}/releases/tag/${tag_name})\n" >>"${cl_dir}/changelog.md"; fi
+			if [ $grab_cl = true ]; then
+				if [ "$use_gitlab_patches" = true ]; then
+					echo -e "[Changelog](https://gitlab.com/ReVanced/revanced-patches/-/releases/${tag_name})\n" >>"${cl_dir}/changelog.md"
+				else
+					echo -e "[Changelog](https://github.com/${src}/releases/tag/${tag_name})\n" >>"${cl_dir}/changelog.md"
+				fi
+			fi
 			if [ "$REMOVE_RV_INTEGRATIONS_CHECKS" = true ]; then
 				# Dynamically calculate inner extension (rvp->rve, mpp->mpe)
 				local inner_ext="${ext%p}e"
@@ -165,16 +208,36 @@ config_update() {
 			if [ "${sources["$PATCHES_SRC/$PATCHES_VER"]}" = 1 ]; then upped+=("$table_name"); fi
 		else
 			sources["$PATCHES_SRC/$PATCHES_VER"]=0
-			local rv_rel="https://api.github.com/repos/${PATCHES_SRC}/releases"
-			if [ "$PATCHES_VER" = "dev" ]; then
-				last_patches=$(gh_req "$rv_rel" - | jq -e -r '.[0]')
-			elif [ "$PATCHES_VER" = "latest" ]; then
-				last_patches=$(gh_req "$rv_rel/latest" -)
-			else
-				last_patches=$(gh_req "$rv_rel/tags/${ver}" -)
+			local rv_rel="https://api.github.com/repos/${PATCHES_SRC}/releases" use_gitlab_patches=false
+			if is_gitlab_patches_source "$PATCHES_SRC"; then
+				use_gitlab_patches=true
+				rv_rel="$GITLAB_PATCHES_RELEASES_URL"
 			fi
-			if ! last_patches=$(jq -e -r ".assets[] | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
-				abort oops
+			if [ "$use_gitlab_patches" = true ]; then
+				local resp
+				resp=$(req "$rv_rel" -) || return 1
+				if [ "$PATCHES_VER" = "dev" ]; then
+					PATCHES_VER=$(jq -e -r '.[].tag_name' <<<"$resp" | get_highest_ver) || return 1
+				fi
+				if [ "$PATCHES_VER" = "latest" ]; then
+					last_patches=$(jq -e '.[0]' <<<"$resp") || return 1
+				else
+					last_patches=$(jq -e --arg ver "$PATCHES_VER" '.[] | select(.tag_name == $ver)' <<<"$resp" | head -1) || return 1
+				fi
+				if ! last_patches=$(jq -e -r ".assets.links[]? | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
+					abort oops
+				fi
+			else
+				if [ "$PATCHES_VER" = "dev" ]; then
+					last_patches=$(gh_req "$rv_rel" - | jq -e -r '.[0]')
+				elif [ "$PATCHES_VER" = "latest" ]; then
+					last_patches=$(gh_req "$rv_rel/latest" -)
+				else
+					last_patches=$(gh_req "$rv_rel/tags/${PATCHES_VER}" -)
+				fi
+				if ! last_patches=$(jq -e -r ".assets[] | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
+					abort oops
+				fi
 			fi
 			if [ "$last_patches" ]; then
 				if ! OP=$(grep "^Patches: ${PATCHES_SRC%%/*}/" build.md | grep "$last_patches"); then
