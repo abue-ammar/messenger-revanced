@@ -1,6 +1,6 @@
 parallel-jobs = 1
-patches-source = "inotia00/revanced-patches"
-cli-source = "MorpheApp/morphe-cli"
+patches-source = "ReVanced/revanced-patches"
+cli-source = "ReVanced/revanced-cli"
 
 [Messenger]
 enabled = true
