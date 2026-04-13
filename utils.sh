@@ -6,6 +6,7 @@ BIN_DIR="bin"
 BUILD_DIR="build"
 PATCH_EXT=""
 GITLAB_PATCHES_RELEASES_URL="https://gitlab.com/api/v4/projects/ReVanced%2Frevanced-patches/releases"
+PATCHES_SRC_DEFAULT="ReVanced/revanced-patches"
 
 if [ "${GITHUB_TOKEN-}" ]; then GH_HEADER="Authorization: token ${GITHUB_TOKEN}"; else GH_HEADER=; fi
 NEXT_VER_CODE=${NEXT_VER_CODE:-$(date +'%Y%m%d')}
@@ -46,7 +47,7 @@ abort() {
 	exit 1
 }
 
-is_gitlab_patches_source() { [ "$1" = "ReVanced/revanced-patches" ]; }
+is_gitlab_patches_source() { [ "$1" = "$PATCHES_SRC_DEFAULT" ]; }
 
 get_prebuilts() {
 	local cli_src=$1 cli_ver=$2 patches_src=$3 patches_ver=$4
@@ -108,12 +109,12 @@ get_prebuilts() {
 				if [ "$ver" = "latest" ]; then
 					resp=$(jq -e '.[0]' <<<"$resp") || return 1
 				else
-					resp=$(jq -e --arg ver "$ver" '.[] | select(.tag_name == $ver)' <<<"$resp" | head -1) || return 1
+					resp=$(jq -e --arg tag_name "$ver" '.[] | select(.tag_name == $tag_name)' <<<"$resp" | head -1) || return 1
 				fi
 				tag_name=$(jq -r '.tag_name' <<<"$resp")
 				matches=$(jq -e ".assets.links | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
 				if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
-					epr "More than 1 asset was found for this patches release. Fallbacking to the first one found..."
+					epr "More than 1 asset was found for this patches release. Falling back to the first one found..."
 				fi
 				asset=$(jq -r ".[0]" <<<"$matches")
 				url=$(jq -r '.direct_asset_url // .url' <<<"$asset")
@@ -125,7 +126,7 @@ get_prebuilts() {
 				tag_name=$(jq -r '.tag_name' <<<"$resp")
 				matches=$(jq -e ".assets | map(select(.name | endswith(\"$ext\")))" <<<"$resp")
 				if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
-					epr "More than 1 asset was found for this cli release. Fallbacking to the first one found..."
+					epr "More than 1 asset was found for this cli release. Falling back to the first one found..."
 				fi
 				asset=$(jq -r ".[0]" <<<"$matches")
 				url=$(jq -r .url <<<"$asset")
@@ -220,7 +221,7 @@ config_update() {
 				if [ "$PATCHES_VER" = "latest" ]; then
 					last_patches=$(jq -e '.[0]' <<<"$resp") || return 1
 				else
-					last_patches=$(jq -e --arg ver "$PATCHES_VER" '.[] | select(.tag_name == $ver)' <<<"$resp" | head -1) || return 1
+					last_patches=$(jq -e --arg tag_name "$PATCHES_VER" '.[] | select(.tag_name == $tag_name)' <<<"$resp" | head -1) || return 1
 				fi
 				if ! last_patches=$(jq -e -r ".assets.links[]? | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
 					abort "Failed to find patch asset with extension '${PATCH_EXT}' in GitLab release metadata"
