@@ -81,7 +81,7 @@ get_prebuilts() {
 			local resp
 			if [ "$use_gitlab_patches" = true ]; then
 				resp=$(req "$rv_rel" -) || return 1
-				ver=$(jq -e -r '.[].tag_name' <<<"$resp" | get_highest_ver) || return 1
+				ver=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
 			else
 				resp=$(gh_req "$rv_rel" -) || return 1
 				ver=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
@@ -215,7 +215,7 @@ config_update() {
 				local resp
 				resp=$(req "$rv_rel" -) || return 1
 				if [ "$PATCHES_VER" = "dev" ]; then
-					PATCHES_VER=$(jq -e -r '.[].tag_name' <<<"$resp" | get_highest_ver) || return 1
+					PATCHES_VER=$(jq -e -r '.[] | .tag_name' <<<"$resp" | get_highest_ver) || return 1
 				fi
 				if [ "$PATCHES_VER" = "latest" ]; then
 					last_patches=$(jq -e '.[0]' <<<"$resp") || return 1
