@@ -88,11 +88,9 @@ get_prebuilts() {
 			fi
 		fi
 		if [ "$ver" = "latest" ]; then
-			if [ "$use_gitlab_patches" = true ]; then
-				name_ver="*"
-			else
+			name_ver="*"
+			if [ "$use_gitlab_patches" = false ]; then
 				rv_rel+="/latest"
-				name_ver="*"
 			fi
 		else
 			if [ "$use_gitlab_patches" = false ]; then
@@ -225,7 +223,7 @@ config_update() {
 					last_patches=$(jq -e --arg ver "$PATCHES_VER" '.[] | select(.tag_name == $ver)' <<<"$resp" | head -1) || return 1
 				fi
 				if ! last_patches=$(jq -e -r ".assets.links[]? | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
-					abort oops
+					abort "Failed to find patch asset with extension '${PATCH_EXT}' in GitLab release metadata"
 				fi
 			else
 				if [ "$PATCHES_VER" = "dev" ]; then
@@ -236,7 +234,7 @@ config_update() {
 					last_patches=$(gh_req "$rv_rel/tags/${PATCHES_VER}" -)
 				fi
 				if ! last_patches=$(jq -e -r ".assets[] | select(.name | endswith(\"$PATCH_EXT\")) | .name" <<<"$last_patches"); then
-					abort oops
+					abort "Failed to find patch asset with extension '${PATCH_EXT}' in GitHub release metadata"
 				fi
 			fi
 			if [ "$last_patches" ]; then
